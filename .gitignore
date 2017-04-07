@@ -27,3 +27,16 @@
 *.exe
 *.out
 *.app
+
+# VS
+*.vcxproj.user
+*.VC.db
+*.VC.opendb
+*.suo
+
+msvs/Debug
+msvs/Release
+msvs/x64
+msvs/tests/Debug
+msvs/tests/Release
+msvs/tests/x64
