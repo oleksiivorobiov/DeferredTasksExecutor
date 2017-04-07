@@ -1,4 +1,5 @@
 ﻿#include "DeferredTasksExecutor.h"
+#include <algorithm>
 
 using std::thread;
 using std::lock_guard;
@@ -42,8 +43,8 @@ void DeferredTasksExecutor::threadRoutine() {
     if (_stop && _tasks.empty())
       return;
 
-    auto task = _tasks.front();
-    _tasks.pop();
+    auto task = _tasks.back().second;
+    _tasks.pop_back();
     lock.unlock();
 
     task->execute();
@@ -68,9 +69,14 @@ DeferredTasksExecutor::~DeferredTasksExecutor() {
   stop();
 }
 
-void DeferredTasksExecutor::submit(std::shared_ptr<DeferredTask> task) {
+void DeferredTasksExecutor::submit(std::shared_ptr<DeferredTask> task, int priority) {
   lock_guard<mutex> lock(_tasks_mutex);
-  _tasks.push(task);
+
+  auto it = std::lower_bound(_tasks.begin(), _tasks.end(), priority, [](const auto &lhs, const auto &rhs) {
+    return lhs.first < rhs;
+  });
+  _tasks.emplace(it, priority, task);
+
   _wakeup_threads.notify_one();
 }
 

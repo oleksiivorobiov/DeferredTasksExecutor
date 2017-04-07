@@ -1,19 +1,9 @@
 #include "DeferredTasksExecutor.h"
 #include "gtest/gtest.h"
+#include "utils.h"
 #include <future>
 
 using namespace std;
-
-// TODO: move to utils file
-void setPromise(promise<void> &prom) {
-  try {
-    prom.set_value();
-  }
-  catch (future_error &e) {
-    if (e.code() != make_error_condition(future_errc::promise_already_satisfied))
-      throw;
-  }
-}
 
 class TestTask : public DeferredTask {
   function<void()> _func;
@@ -99,15 +89,7 @@ TEST_F(DeferredTaskTest_WithExecutingTask, IsExecutingShouldReturnTrueIfTaskIsEx
 
 class DeferredTasksExecutorTest : public ::testing::Test {
 protected:
-  atomic<unsigned int> run_called;
 
-  DeferredTasksExecutorTest() : run_called(0) {}
-
-  shared_ptr<TestTask> getCountingTask() {
-    return make_shared<TestTask>([&]() {
-      ++run_called;
-    });
-  }
 };
 
 class DeferredTasksExecutorTest_WithSingleThread : public DeferredTasksExecutorTest {
@@ -117,27 +99,6 @@ protected:
   DeferredTasksExecutorTest_WithSingleThread() : executor(1) {}
 };
 
-TEST_F(DeferredTasksExecutorTest_WithSingleThread, ExecutesAllTasksInSubmitOrder) {
-  shared_ptr<TestTask> last_task;
-  vector<size_t> execution_order;
-
-  const int tasks_size = 50000;
-  for (size_t i = 0; i < tasks_size; ++i) {
-    last_task = make_shared<TestTask>([&execution_order, i]() {
-      if (i == 0)
-        this_thread::sleep_for(100ms); // wait for few more tasks to become submitted
-      execution_order.push_back(i);
-    });
-    executor.submit(last_task);
-  }
-
-  ASSERT_TRUE(last_task->waitFor(500));
-
-  ASSERT_EQ(tasks_size, execution_order.size());
-  for (size_t i = 0; i < execution_order.size(); ++i)
-    ASSERT_EQ(i, execution_order[i]);
-}
-
 TEST_F(DeferredTasksExecutorTest_WithSingleThread, MaxParallelTasksShouldBeOne) {
   ASSERT_EQ(1, executor.getMaxParallelTasks());
 }
@@ -145,6 +106,15 @@ TEST_F(DeferredTasksExecutorTest_WithSingleThread, MaxParallelTasksShouldBeOne) 
 class DeferredTasksExecutorTest_WithDefaultThreadsCount : public DeferredTasksExecutorTest {
 protected:
   DeferredTasksExecutor executor;
+  atomic<unsigned int> run_called;
+
+  DeferredTasksExecutorTest_WithDefaultThreadsCount() : run_called(0) {}
+
+  shared_ptr<TestTask> getCountingTask() {
+    return make_shared<TestTask>([&]() {
+      ++run_called;
+    });
+  }
 };
 
 TEST_F(DeferredTasksExecutorTest_WithDefaultThreadsCount, ExecutesTaskAfterSubmit) {
@@ -155,29 +125,31 @@ TEST_F(DeferredTasksExecutorTest_WithDefaultThreadsCount, ExecutesTaskAfterSubmi
   ASSERT_EQ(1, run_called);
 }
 
-class DeferredTasksExecutorTest_WhenNoIdleThreads : public DeferredTasksExecutorTest_WithDefaultThreadsCount {
+class BlockThreadsHelper {
 protected:
   promise<void> block_threads_promise;
   shared_future<void> block_threads_future;
 
-  DeferredTasksExecutorTest_WhenNoIdleThreads() : block_threads_future(block_threads_promise.get_future()) {}
+  BlockThreadsHelper() : block_threads_future(block_threads_promise.get_future()) {}
+
+  shared_ptr<TestTask> getBlockingTask() {
+    return make_shared<TestTask>([&]() {
+      block_threads_future.get();
+    });
+  }
 
   void makeAllThreadsBusy(DeferredTasksExecutor &executor) {
     for (size_t i = 0; i < executor.getMaxParallelTasks(); ++i)
-      executor.submit(getBlockingCountingTask());
+      executor.submit(getBlockingTask());
   }
 
   void releaseAllBusyThreads() {
     setPromise(block_threads_promise);
   }
+};
 
-  shared_ptr<TestTask> getBlockingCountingTask() {
-    return make_shared<TestTask>([&]() {
-      ++run_called;
-      block_threads_future.get();
-    });
-  }
-
+class DeferredTasksExecutorTest_WhenNoIdleThreads : public DeferredTasksExecutorTest_WithDefaultThreadsCount, public BlockThreadsHelper {
+protected:
   void SetUp() override {
     makeAllThreadsBusy(executor);
   }
@@ -193,7 +165,7 @@ TEST_F(DeferredTasksExecutorTest_WhenNoIdleThreads, DontExecuteRedundantTask) {
   executor.submit(redundant_task);
 
   ASSERT_FALSE(redundant_task->waitFor(20));
-  ASSERT_EQ(executor.getMaxParallelTasks(), run_called);
+  ASSERT_EQ(0, run_called);
 }
 
 TEST_F(DeferredTasksExecutorTest_WhenNoIdleThreads, ExecutesRedundantTaskAfterThreadBecomeIdle) {
@@ -202,6 +174,53 @@ TEST_F(DeferredTasksExecutorTest_WhenNoIdleThreads, ExecutesRedundantTaskAfterTh
   releaseAllBusyThreads();
 
   ASSERT_TRUE(redundant_task->waitFor(20));
-  ASSERT_EQ(executor.getMaxParallelTasks() + 1, run_called);
+  ASSERT_EQ(1, run_called);
 }
 
+class DeferredTasksExecutorTest_WithSingleBlockedThread : public DeferredTasksExecutorTest_WithSingleThread, public BlockThreadsHelper {
+protected:
+  void SetUp() override {
+    makeAllThreadsBusy(executor);
+  }
+
+  void TearDown() override {
+    releaseAllBusyThreads();
+    executor.stop();
+  }
+};
+
+TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, ExecutesAllTasksWithSamePriorityInSubmitOrder) {
+  vector<size_t> execution_order;
+
+  const int tasks_size = 5000;
+  for (size_t i = 0; i < tasks_size; ++i)
+    executor.submit(make_shared<TestTask>([&execution_order, i]() {
+      execution_order.push_back(i);
+    }));
+
+  releaseAllBusyThreads();
+  executor.stop();
+
+  ASSERT_EQ(tasks_size, execution_order.size());
+  for (size_t i = 0; i < execution_order.size(); ++i)
+    ASSERT_EQ(i, execution_order[i]);
+}
+
+TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, ExecutesTasksWithHighPriorityFirst) {
+  vector<int> priorities;
+
+  const int tasks_size = 2000;
+  for (size_t i = 0; i < tasks_size; ++i) {
+    int priority = getRandInt(-500, 500);
+    executor.submit(make_shared<TestTask>([&priorities, priority, i]() {
+      priorities.push_back(priority);
+    }), priority);
+  }
+
+  releaseAllBusyThreads();
+  executor.stop();
+
+  ASSERT_EQ(tasks_size, priorities.size());
+  for (size_t i = 0; i < priorities.size() - 1; ++i)
+    ASSERT_GE(priorities[i], priorities[i + 1]);
+}

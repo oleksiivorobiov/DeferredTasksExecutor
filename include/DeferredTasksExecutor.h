@@ -3,9 +3,9 @@
 
 #include <vector>
 #include <thread>
-#include <queue>
 #include <mutex>
 #include <atomic>
+#include <deque>
 
 class DeferredTask {
 public:
@@ -26,7 +26,7 @@ public:
 
 class DeferredTasksExecutor {
   std::vector<std::thread> _thread_pool;
-  std::queue<std::shared_ptr<DeferredTask>> _tasks;
+  std::deque<std::pair<int, std::shared_ptr<DeferredTask>>> _tasks; // TODO: compare vs vector/list in real scenarios
   std::mutex _tasks_mutex;
   std::condition_variable _wakeup_threads;
   std::atomic<bool> _stop;
@@ -36,7 +36,7 @@ public:
   DeferredTasksExecutor(size_t max_parallel_tasks);
   size_t getMaxParallelTasks() const;
   ~DeferredTasksExecutor();
-  void submit(std::shared_ptr<DeferredTask> task);
+  void submit(std::shared_ptr<DeferredTask> task, int priority = 0);
   void stop();
 };
 

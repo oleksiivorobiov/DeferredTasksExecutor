@@ -36,10 +36,16 @@
     <ClCompile Include="..\..\tests\DeferredTasksExecutorTest.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\tests\utils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\DeferredTasksExecutor.h">
       <Filter>Header Files\libs</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\tests\utils.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
