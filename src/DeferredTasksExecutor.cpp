@@ -5,17 +5,19 @@ using std::lock_guard;
 using std::unique_lock;
 using std::mutex;
 
-DeferredTask::DeferredTask() : _done(false) {}
+DeferredTask::DeferredTask() : _state(NEW) {}
+
 DeferredTask::~DeferredTask() {}
 
 void DeferredTask::execute() {
+  _state = EXECUTING;
   run();
-  _done = true;
+  _state = DONE;
   _done_cond.notify_all();
 }
 
 bool DeferredTask::waitFor(unsigned int timeout_ms) {
-  auto done_cond_pred = [&]() { return _done; };
+  auto done_cond_pred = [&]() { return _state == DONE; };
 
   unique_lock<mutex> lock(_mutex);
 
@@ -25,6 +27,10 @@ bool DeferredTask::waitFor(unsigned int timeout_ms) {
   }
 
   return _done_cond.wait_for(lock, std::chrono::milliseconds(timeout_ms), done_cond_pred);
+}
+
+DeferredTask::State DeferredTask::getState() const {
+  return _state;
 }
 
 void DeferredTasksExecutor::threadRoutine() {

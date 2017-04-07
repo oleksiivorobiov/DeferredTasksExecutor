@@ -8,9 +8,12 @@
 #include <atomic>
 
 class DeferredTask {
+public:
+  enum State { NEW, EXECUTING, DONE };
+private:
   std::mutex _mutex;
   std::condition_variable _done_cond;
-  bool _done;
+  std::atomic<State> _state;
 protected:
   virtual void run() = 0;
 public:
@@ -18,6 +21,7 @@ public:
   virtual ~DeferredTask();
   void execute();
   bool waitFor(unsigned int timeout_ms = 0);
+  State getState() const;
 };
 
 class DeferredTasksExecutor {

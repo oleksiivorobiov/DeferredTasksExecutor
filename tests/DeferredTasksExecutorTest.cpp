@@ -4,6 +4,17 @@
 
 using namespace std;
 
+// TODO: move to utils file
+void setPromise(promise<void> &prom) {
+  try {
+    prom.set_value();
+  }
+  catch (future_error &e) {
+    if (e.code() != make_error_condition(future_errc::promise_already_satisfied))
+      throw;
+  }
+}
+
 class TestTask : public DeferredTask {
   function<void()> _func;
 public:
@@ -45,6 +56,45 @@ TEST_F(DeferredTaskTest_WithEmptyTask, WaitForShouldReturnTrueAfterTaskExecuted)
 
 TEST_F(DeferredTaskTest_WithEmptyTask, WaitForShouldReturnFalseIfTaskWasNotExecutedInTime) {
   ASSERT_FALSE(task.waitFor(timeout));
+}
+
+TEST_F(DeferredTaskTest_WithEmptyTask, CreatedTaskSholdBeInNewState) {
+  ASSERT_EQ(DeferredTask::NEW, task.getState());
+}
+
+TEST_F(DeferredTaskTest_WithEmptyTask, ExecutedTaskSholdBeInDoneState) {
+  task.execute();
+
+  ASSERT_EQ(DeferredTask::DONE, task.getState());
+}
+
+class DeferredTaskTest_WithExecutingTask : public DeferredTaskTest {
+protected:
+  promise<void> block_thread_promise;
+  future<void> block_thread_future;
+  TestTask task;
+
+  DeferredTaskTest_WithExecutingTask() : block_thread_future(block_thread_promise.get_future()), task([&]() {
+                                             block_thread_future.get();
+                                           }) {}
+
+  void releaseBlockedTasks() {
+    setPromise(block_thread_promise);
+  }
+
+  void TearDown() override {
+    releaseBlockedTasks();
+  }
+};
+
+TEST_F(DeferredTaskTest_WithExecutingTask, IsExecutingShouldReturnTrueIfTaskIsExecuting) {
+  thread executor([&] () {
+    task.execute();
+  });
+  ASSERT_EQ(DeferredTask::EXECUTING, task.getState());
+
+  releaseBlockedTasks();
+  executor.join();
 }
 
 class DeferredTasksExecutorTest : public ::testing::Test {
@@ -118,13 +168,7 @@ protected:
   }
 
   void releaseAllBusyThreads() {
-    try {
-      block_threads_promise.set_value();
-    }
-    catch (future_error &e) {
-      if (e.code() != make_error_condition(future_errc::promise_already_satisfied))
-        throw;
-    }
+    setPromise(block_threads_promise);
   }
 
   shared_ptr<TestTask> getBlockingCountingTask() {
