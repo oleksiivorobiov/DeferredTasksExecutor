@@ -40,3 +40,6 @@ msvs/x64
 msvs/tests/Debug
 msvs/tests/Release
 msvs/tests/x64
+
+# doxygen default folder
+html/
