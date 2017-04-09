@@ -129,8 +129,9 @@ class BlockThreadsHelper {
 protected:
   promise<void> block_threads_promise;
   shared_future<void> block_threads_future;
+  std::chrono::milliseconds future_timeout;
 
-  BlockThreadsHelper() : block_threads_future(block_threads_promise.get_future()) {}
+  BlockThreadsHelper() : block_threads_future(block_threads_promise.get_future()), future_timeout(2000) {}
 
   shared_ptr<TestTask> getBlockingTask() {
     return make_shared<TestTask>([&]() {
@@ -223,4 +224,25 @@ TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, ExecutesTasksWithHighP
   ASSERT_EQ(tasks_size, priorities.size());
   for (size_t i = 0; i < priorities.size() - 1; ++i)
     ASSERT_GE(priorities[i], priorities[i + 1]);
+}
+
+TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, InQueueShouldReturnCorrectValue) {
+  promise<void> block_thread_promise, thread_ready_promise;
+  future<void> block_thread_future(block_thread_promise.get_future()), thread_ready_future(thread_ready_promise.get_future());
+
+  auto task = make_shared<TestTask>([&]() {
+    thread_ready_promise.set_value();
+    block_thread_future.wait_for(future_timeout);
+  });
+  ASSERT_FALSE(executor.inQueue(task));
+
+  executor.submit(task);
+  ASSERT_TRUE(executor.inQueue(task));
+
+  releaseAllBusyThreads();
+  ASSERT_EQ(std::future_status::ready, thread_ready_future.wait_for(future_timeout));
+  ASSERT_FALSE(executor.inQueue(task));
+
+  block_thread_promise.set_value();
+  task->waitFor();
 }

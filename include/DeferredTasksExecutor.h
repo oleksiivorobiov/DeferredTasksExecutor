@@ -38,6 +38,7 @@ public:
   ~DeferredTasksExecutor();
   void submit(std::shared_ptr<DeferredTask> task, int priority = 0);
   void stop();
+  bool inQueue(std::shared_ptr<DeferredTask> task);
 };
 
 #endif

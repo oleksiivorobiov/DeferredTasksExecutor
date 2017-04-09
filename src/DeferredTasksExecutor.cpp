@@ -95,3 +95,13 @@ void DeferredTasksExecutor::stop() {
   for (auto &thread : _thread_pool)
     thread.join();
 }
+
+bool DeferredTasksExecutor::inQueue(std::shared_ptr<DeferredTask> task) {
+  std::lock_guard<mutex> lock(_tasks_mutex);
+
+  for (auto &t : _tasks)
+    if (t.second.get() == task.get())
+      return true;
+
+  return false;
+}
