@@ -65,7 +65,7 @@ protected:
   TestTask task;
 
   DeferredTaskTest_WithExecutingTask() : block_thread_future(block_thread_promise.get_future()), task([&]() {
-                                             block_thread_future.get();
+                                             block_thread_future.wait_for(2000s);
                                            }) {}
 
   void releaseBlockedTasks() {
@@ -129,13 +129,13 @@ class BlockThreadsHelper {
 protected:
   promise<void> block_threads_promise;
   shared_future<void> block_threads_future;
-  std::chrono::milliseconds future_timeout;
+  chrono::milliseconds future_timeout;
 
   BlockThreadsHelper() : block_threads_future(block_threads_promise.get_future()), future_timeout(2000) {}
 
   shared_ptr<TestTask> getBlockingTask() {
     return make_shared<TestTask>([&]() {
-      block_threads_future.get();
+      block_threads_future.wait_for(future_timeout);
     });
   }
 
