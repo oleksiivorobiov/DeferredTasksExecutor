@@ -28,23 +28,23 @@ public:
 
 class DeferredTasksExecutor {
   std::vector<std::thread> _thread_pool;
-  typedef std::deque<std::pair<int, std::shared_ptr<DeferredTask>>> tasks_container_t;
+  typedef std::deque<std::pair<int, DeferredTask*>> tasks_container_t;
   tasks_container_t _tasks; // TODO: compare vs vector/list in real scenarios
-  std::mutex _tasks_mutex;
+  mutable std::mutex _tasks_mutex;
   std::condition_variable _wakeup_threads;
   std::atomic<bool> _stop;
   void threadRoutine();
-  tasks_container_t::const_iterator findTask(std::shared_ptr<DeferredTask> task) const;
+  tasks_container_t::const_iterator findTask(const DeferredTask *task) const;
 public:
   DeferredTasksExecutor();
   DeferredTasksExecutor(size_t max_parallel_tasks);
   size_t getMaxParallelTasks() const;
   ~DeferredTasksExecutor();
-  void submit(std::shared_ptr<DeferredTask> task, int priority = 0);
+  void submit(DeferredTask *task, int priority = 0);
   // TODO: implement DeferredTask::cancel()
   void stop();
-  bool inQueue(std::shared_ptr<DeferredTask> task);
-  bool cancel(std::shared_ptr<DeferredTask> task);
+  bool inQueue(const DeferredTask *task) const;
+  bool cancel(const DeferredTask *task);
 };
 
 #endif

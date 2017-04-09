@@ -59,12 +59,13 @@ void DeferredTasksExecutor::threadRoutine() {
     lock.unlock();
 
     task->execute();
+    delete task;
   }
 }
 
-DeferredTasksExecutor::tasks_container_t::const_iterator DeferredTasksExecutor::findTask(std::shared_ptr<DeferredTask> task) const {
+DeferredTasksExecutor::tasks_container_t::const_iterator DeferredTasksExecutor::findTask(const DeferredTask *task) const {
   for (auto it = _tasks.cbegin(); it != _tasks.cend(); ++it)
-    if (it->second.get() == task.get())
+    if (it->second == task)
       return it;
 
   return _tasks.cend();
@@ -88,7 +89,7 @@ DeferredTasksExecutor::~DeferredTasksExecutor() {
   stop();
 }
 
-void DeferredTasksExecutor::submit(std::shared_ptr<DeferredTask> task, int priority) {
+void DeferredTasksExecutor::submit(DeferredTask *task, int priority) {
   unique_lock<mutex> lock(_tasks_mutex);
 
   auto it = std::lower_bound(_tasks.begin(), _tasks.end(), priority, [](const auto &lhs, const auto &rhs) {
@@ -113,13 +114,13 @@ void DeferredTasksExecutor::stop() {
     thread.join();
 }
 
-bool DeferredTasksExecutor::inQueue(std::shared_ptr<DeferredTask> task) {
+bool DeferredTasksExecutor::inQueue(const DeferredTask *task) const {
   std::lock_guard<mutex> lock(_tasks_mutex);
 
   return findTask(task) != _tasks.cend();
 }
 
-bool DeferredTasksExecutor::cancel(std::shared_ptr<DeferredTask> task) {
+bool DeferredTasksExecutor::cancel(const DeferredTask *task) {
   std::lock_guard<mutex> lock(_tasks_mutex);
 
   auto it = findTask(task);

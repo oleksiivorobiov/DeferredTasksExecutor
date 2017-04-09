@@ -28,8 +28,8 @@ protected:
     block_thread_future(block_thread_promise.get_future()),
     thread_ready_future(thread_ready_promise.get_future()) {}
 
-  shared_ptr<TestTask> getBlockingTask() {
-    return make_shared<TestTask>([&]() {
+  TestTask * getBlockingTask() {
+    return new TestTask([&]() {
       thread_ready_promise.set_value();
       block_thread_future.wait_for(future_timeout);
     });
@@ -38,7 +38,7 @@ protected:
   void makeAllThreadsBusy(DeferredTasksExecutor &executor) {
     auto enough_priority_to_ensure_blocking_tasks_will_be_executed_first = numeric_limits<int>::max();
     for (size_t i = 0; i < executor.getMaxParallelTasks(); ++i)
-      executor.submit(make_shared<TestTask>([&]() {
+      executor.submit(new TestTask([&]() {
       block_threads_future.wait_for(future_timeout);
     }), enough_priority_to_ensure_blocking_tasks_will_be_executed_first);
   }
@@ -108,7 +108,7 @@ TEST_F(DeferredTaskTest_WithEmptyTask, ExecutedTaskSholdBeInDoneState) {
 class DeferredTaskTest_WithBlockThreadsHelper : public DeferredTaskTest, public BlockThreadsHelper {};
 
 TEST_F(DeferredTaskTest_WithBlockThreadsHelper, IsExecutingShouldReturnTrueIfTaskIsExecuting) {
-  auto task = getBlockingTask();
+  shared_ptr<TestTask> task(getBlockingTask());
 
   thread executor([&] () {
     task->execute();
@@ -144,8 +144,8 @@ protected:
 
   DeferredTasksExecutorTest_WithDefaultThreadsCount() : run_called(0) {}
 
-  shared_ptr<TestTask> getCountingTask() {
-    return make_shared<TestTask>([&]() {
+  TestTask * getCountingTask() {
+    return new TestTask([&]() {
       ++run_called;
     });
   }
@@ -221,7 +221,7 @@ TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, ExecutesAllTasksWithSa
 
   const int tasks_size = 5000;
   for (size_t i = 0; i < tasks_size; ++i)
-    executor.submit(make_shared<TestTask>([&execution_order, i]() {
+    executor.submit(new TestTask([&execution_order, i]() {
       execution_order.push_back(i);
     }));
 
@@ -239,7 +239,7 @@ TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, ExecutesTasksWithHighP
   const int tasks_size = 2000;
   for (size_t i = 0; i < tasks_size; ++i) {
     int priority = getRandInt(-500, 500);
-    executor.submit(make_shared<TestTask>([&priorities, priority, i]() {
+    executor.submit(new TestTask([&priorities, priority, i]() {
       priorities.push_back(priority);
     }), priority);
   }
@@ -268,7 +268,8 @@ TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, InQueueShouldReturnCor
 }
 
 TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, CancelReturnsTrueIfQueuedTaskWasRemoved) {
-  auto task = make_shared<TestTask>([&]() {});
+  auto task_ptr = make_shared<TestTask>([&]() {});
+  auto task = task_ptr.get();
   ASSERT_FALSE(executor.cancel(task));
 
   executor.submit(task);
@@ -280,13 +281,13 @@ TEST(ProofOfConcept, RunTaskSequentally) {
   DeferredTasksExecutor executor(1);
   string executed_order;
 
-  auto sequentalTask = make_shared<TestTask>([&] {
+  auto sequentalTask = new TestTask([&] {
     executed_order += "s";
   });
-  auto commonTask = make_shared<TestTask>([&] {
+  auto commonTask = new TestTask([&] {
     executed_order += "c";
   });
-  auto mainTask = make_shared<TestTask>([&] {
+  auto mainTask = new TestTask([&] {
     // do stuff
     executed_order += "m";
     // after finish submit sequental task with high priority so it will be executed before any queued with mid priority
