@@ -7,6 +7,8 @@
 #include <atomic>
 #include <deque>
 
+// please read "implementation notes" section in readme.md before review this code
+
 /**
  * \brief Represents concurrent task, useful in combination with DeferredTasksExecutor
  */
