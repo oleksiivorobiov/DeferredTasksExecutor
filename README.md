@@ -36,6 +36,7 @@ Example tasks may be implemented as usleep(random(1000000)) simulating real heav
 * Task can be cancelled from executor if it's not executing yet with DeferredTasksExecutor::cancel
 * Taks priority is just an int value so client app can design priorities by itself(probably with enums)
 * Implementation of DeferredTask or DeferredTasksExecutor don't use std::future, however tests code does(just to minimize amount of code - it's easiest way to block and release thread in STL)
+* "test" project contains tests, "example" project contains demo console app shows realtime dummy tasks processing
 
 ## Build and run
 Make sure you initialized submodules:
