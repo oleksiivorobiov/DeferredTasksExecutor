@@ -53,6 +53,14 @@ void DeferredTasksExecutor::threadRoutine() {
   }
 }
 
+DeferredTasksExecutor::tasks_container_t::const_iterator DeferredTasksExecutor::findTask(std::shared_ptr<DeferredTask> task) const {
+  for (auto it = _tasks.cbegin(); it != _tasks.cend(); ++it)
+    if (it->second.get() == task.get())
+      return it;
+
+  return _tasks.cend();
+}
+
 DeferredTasksExecutor::DeferredTasksExecutor() : DeferredTasksExecutor(thread::hardware_concurrency()) {}
 
 DeferredTasksExecutor::DeferredTasksExecutor(size_t max_parallel_tasks) : _stop(false) {
@@ -99,9 +107,17 @@ void DeferredTasksExecutor::stop() {
 bool DeferredTasksExecutor::inQueue(std::shared_ptr<DeferredTask> task) {
   std::lock_guard<mutex> lock(_tasks_mutex);
 
-  for (auto &t : _tasks)
-    if (t.second.get() == task.get())
-      return true;
+  return findTask(task) != _tasks.cend();
+}
+
+bool DeferredTasksExecutor::cancel(std::shared_ptr<DeferredTask> task) {
+  std::lock_guard<mutex> lock(_tasks_mutex);
+
+  auto it = findTask(task);
+  if (it != _tasks.cend()) {
+    _tasks.erase(it);
+    return true;
+  }
 
   return false;
 }
