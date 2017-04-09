@@ -36,10 +36,11 @@ protected:
   }
 
   void makeAllThreadsBusy(DeferredTasksExecutor &executor) {
+    auto enough_priority_to_ensure_blocking_tasks_will_be_executed_first = numeric_limits<int>::max();
     for (size_t i = 0; i < executor.getMaxParallelTasks(); ++i)
       executor.submit(make_shared<TestTask>([&]() {
       block_threads_future.wait_for(future_timeout);
-    }));
+    }), enough_priority_to_ensure_blocking_tasks_will_be_executed_first);
   }
 
   void releaseAllBusyThreads() {
