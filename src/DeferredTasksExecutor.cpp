@@ -12,7 +12,10 @@ DeferredTask::~DeferredTask() {}
 void DeferredTask::execute() {
   _state = EXECUTING;
   run();
+
+  unique_lock<mutex> lock(_mutex);
   _state = DONE;
+  lock.unlock();
   _done_cond.notify_all();
 }
 
@@ -81,10 +84,13 @@ void DeferredTasksExecutor::submit(std::shared_ptr<DeferredTask> task, int prior
 }
 
 void DeferredTasksExecutor::stop() {
+  unique_lock<mutex> lock(_tasks_mutex);
   if (_stop)
     return;
 
   _stop = true;
+  lock.unlock();
+
   _wakeup_threads.notify_all();
   for (auto &thread : _thread_pool)
     thread.join();
