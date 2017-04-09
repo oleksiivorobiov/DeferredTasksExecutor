@@ -2,7 +2,6 @@
 #include <algorithm>
 
 using std::thread;
-using std::lock_guard;
 using std::unique_lock;
 using std::mutex;
 
@@ -70,12 +69,13 @@ DeferredTasksExecutor::~DeferredTasksExecutor() {
 }
 
 void DeferredTasksExecutor::submit(std::shared_ptr<DeferredTask> task, int priority) {
-  lock_guard<mutex> lock(_tasks_mutex);
+  unique_lock<mutex> lock(_tasks_mutex);
 
   auto it = std::lower_bound(_tasks.begin(), _tasks.end(), priority, [](const auto &lhs, const auto &rhs) {
     return lhs.first < rhs;
   });
   _tasks.emplace(it, priority, task);
+  lock.unlock();
 
   _wakeup_threads.notify_one();
 }
