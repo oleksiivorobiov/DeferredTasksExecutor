@@ -9,11 +9,12 @@
 
 class DeferredTask {
 public:
-  enum State { NEW, EXECUTING, DONE };
+  enum State { NEW, EXECUTING, DONE, FAILED };
 private:
   std::mutex _mutex;
   std::condition_variable _done_cond;
   std::atomic<State> _state;
+  std::exception_ptr _exception;
 protected:
   virtual void run() = 0;
 public:
@@ -22,6 +23,7 @@ public:
   void execute();
   bool waitFor(unsigned int timeout_ms = 0);
   State getState() const;
+  std::exception_ptr getException() const;
 };
 
 class DeferredTasksExecutor {

@@ -63,6 +63,20 @@ TEST_F(DeferredTaskTest, ExecutingShouldCallRunMethod) {
   ASSERT_TRUE(run_called);
 }
 
+TEST_F(DeferredTaskTest, UnexpectedExceptionInRunCaugthAndSaved) {
+  TestTask task([&]() {
+    throw exception();
+  });
+
+  thread executor([&]() {
+    task.execute();
+  });
+  executor.join();
+
+  ASSERT_EQ(DeferredTask::FAILED, task.getState());
+  ASSERT_TRUE(task.getException());
+}
+
 class DeferredTaskTest_WithEmptyTask : public DeferredTaskTest {
 protected:
   TestTask task;

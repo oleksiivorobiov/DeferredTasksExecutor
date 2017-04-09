@@ -11,16 +11,21 @@ DeferredTask::~DeferredTask() {}
 
 void DeferredTask::execute() {
   _state = EXECUTING;
-  run();
+
+  try {
+    run();
+  } catch (...) {
+    _exception = std::current_exception();
+  }
 
   unique_lock<mutex> lock(_mutex);
-  _state = DONE;
+  _state = _exception ? FAILED : DONE;
   lock.unlock();
   _done_cond.notify_all();
 }
 
 bool DeferredTask::waitFor(unsigned int timeout_ms) {
-  auto done_cond_pred = [&]() { return _state == DONE; };
+  auto done_cond_pred = [&]() { return _state == DONE || _state == FAILED; };
 
   unique_lock<mutex> lock(_mutex);
 
@@ -34,6 +39,10 @@ bool DeferredTask::waitFor(unsigned int timeout_ms) {
 
 DeferredTask::State DeferredTask::getState() const {
   return _state;
+}
+
+std::exception_ptr DeferredTask::getException() const {
+  return _exception;
 }
 
 void DeferredTasksExecutor::threadRoutine() {
