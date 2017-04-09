@@ -260,3 +260,28 @@ TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, CancelReturnsTrueIfQue
   executor.submit(task);
   ASSERT_TRUE(executor.cancel(task));
 }
+
+TEST(ProofOfConcept, RunTaskSequentally) {
+  enum SomePriority { LOW, MID, HIGH };
+  DeferredTasksExecutor executor(1);
+  string executed_order;
+
+  auto sequentalTask = make_shared<TestTask>([&] {
+    executed_order += "s";
+  });
+  auto commonTask = make_shared<TestTask>([&] {
+    executed_order += "c";
+  });
+  auto mainTask = make_shared<TestTask>([&] {
+    // do stuff
+    executed_order += "m";
+    // after finish submit sequental task with high priority so it will be executed before any queued with mid priority
+    executor.submit(sequentalTask, HIGH);
+  });
+
+  executor.submit(mainTask, MID);
+  executor.submit(commonTask, MID);
+
+  executor.stop();
+  ASSERT_STREQ("msc", executed_order.c_str());
+}
