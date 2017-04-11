@@ -46,7 +46,7 @@ int main() {
 
   while (true) {
     int rand_priority = getRandInt(0, 100);
-    executor.submit(new ExampleTask(info), rand_priority);
+    executor.submitAndAutoDelete(new ExampleTask(info), rand_priority);
     ++info.queued;
 
     cout << "\rqueued tasks: " << info.queued <<

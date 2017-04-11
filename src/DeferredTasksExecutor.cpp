@@ -45,6 +45,12 @@ std::exception_ptr DeferredTask::getException() const {
   return _exception;
 }
 
+DeferredTasksExecutor::QueueNode::QueueNode(DeferredTask *task, int priority) {
+  this->task = task;
+  this->priority = priority;
+  this->auto_delete = false;
+}
+
 void DeferredTasksExecutor::threadRoutine() {
   while (true) {
     unique_lock<mutex> lock(_tasks_mutex);
@@ -54,18 +60,19 @@ void DeferredTasksExecutor::threadRoutine() {
     if (_stop && _tasks.empty())
       return;
 
-    auto task = _tasks.back().second;
+    auto enqueued_task = _tasks.back();
     _tasks.pop_back();
     lock.unlock();
 
-    task->execute();
-    delete task;
+    enqueued_task.task->execute();
+    if (enqueued_task.auto_delete)
+      delete enqueued_task.task;
   }
 }
 
 DeferredTasksExecutor::tasks_container_t::const_iterator DeferredTasksExecutor::findTask(const DeferredTask *task) const {
   for (auto it = _tasks.cbegin(); it != _tasks.cend(); ++it)
-    if (it->second == task)
+    if (it->task == task)
       return it;
 
   return _tasks.cend();
@@ -89,14 +96,27 @@ DeferredTasksExecutor::~DeferredTasksExecutor() {
   stop();
 }
 
-void DeferredTasksExecutor::submit(DeferredTask *task, int priority) {
+void DeferredTasksExecutor::enqueueTask(const QueueNode &node) {
   unique_lock<mutex> lock(_tasks_mutex);
 
-  auto it = std::lower_bound(_tasks.begin(), _tasks.end(), priority, [](const auto &lhs, const auto &rhs) {
-    return lhs.first < rhs;
-  });
-  _tasks.emplace(it, priority, task);
+  auto it = std::lower_bound(_tasks.begin(), _tasks.end(), node.priority, [](const auto &lhs, const auto &rhs) {
+                               return lhs.priority < rhs;
+                             });
+  _tasks.insert(it, std::move(node));
   lock.unlock();
+}
+
+void DeferredTasksExecutor::submit(DeferredTask *task, int priority) {
+  QueueNode node(task, priority);
+  enqueueTask(node);
+
+  _wakeup_threads.notify_one();
+}
+
+void DeferredTasksExecutor::submitAndAutoDelete(DeferredTask *task, int priority) {
+  QueueNode node(task, priority);
+  node.auto_delete = true;
+  enqueueTask(node);
 
   _wakeup_threads.notify_one();
 }

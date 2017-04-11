@@ -81,15 +81,23 @@ public:
  * All methods are thread-safe
  */
 class DeferredTasksExecutor {
+  struct QueueNode {
+    DeferredTask *task;
+    int priority;
+    bool auto_delete;
+    QueueNode(DeferredTask *task, int priority);
+  };
   std::vector<std::thread> _thread_pool;
-  typedef std::deque<std::pair<int, DeferredTask*>> tasks_container_t;
+  typedef std::deque<QueueNode> tasks_container_t;
   tasks_container_t _tasks; // TODO: compare vs vector/list in real scenarios
   mutable std::mutex _tasks_mutex;
   std::condition_variable _wakeup_threads;
   std::atomic<bool> _stop;
   void threadRoutine();
+  void enqueueTask(const QueueNode &node);
   tasks_container_t::const_iterator findTask(const DeferredTask *task) const;
 public:
+  static const int DefaultPriority = 0;
   /**
    * \brief Create executor with default worker threads count(equal to CPU cores)
    */
@@ -111,10 +119,16 @@ public:
    * \brief Enqueue task, first available worker thread will take and execute it
    * 
    * Tasks enqueued using FIFO approach, tasks with higher priority executed first
-   * \param task Task to enqueue, should be heap-allocated, executor takes ownership of this object and will delete it after execution
+   * \param task Task to enqueue, memory should be valid until executed
    * \param priority Task priority
    */
-  void submit(DeferredTask *task, int priority = 0);
+  void submit(DeferredTask *task, int priority = DefaultPriority);
+  /**
+   * \brief Same as submit() but additionally delete task after execution
+   * \param task Task to enqueue, should be heap-allocated, It's not safe to do any actions with task after this call
+   * \param priority Task priority
+   */
+  void submitAndAutoDelete(DeferredTask *task, int priority = DefaultPriority);
   /**
    * \brief Block current thread until all queued tasks are executed and stop worker threads
    */
@@ -128,7 +142,7 @@ public:
   /**
    * \brief Cancel enqueued task
    * \param task Task to cancel
-   * \return true if cancelled(in this case ownership of task object transfered to called and he should delete it), false if task already executing or is no enqueued
+   * \return true if cancelled(in this case ownership of task object transfered to caller and he should delete it), false if task already executing or is no enqueued
    */
   bool cancel(const DeferredTask *task);
 };

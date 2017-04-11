@@ -28,8 +28,8 @@ protected:
     block_thread_future(block_thread_promise.get_future()),
     thread_ready_future(thread_ready_promise.get_future()) {}
 
-  TestTask * getBlockingTask() {
-    return new TestTask([&]() {
+  shared_ptr<TestTask> getBlockingTask() {
+    return make_shared<TestTask>([&]() {
       thread_ready_promise.set_value();
       block_thread_future.wait_for(future_timeout);
     });
@@ -38,7 +38,7 @@ protected:
   void makeAllThreadsBusy(DeferredTasksExecutor &executor) {
     auto enough_priority_to_ensure_blocking_tasks_will_be_executed_first = numeric_limits<int>::max();
     for (size_t i = 0; i < executor.getMaxParallelTasks(); ++i)
-      executor.submit(new TestTask([&]() {
+      executor.submitAndAutoDelete(new TestTask([&]() {
       block_threads_future.wait_for(future_timeout);
     }), enough_priority_to_ensure_blocking_tasks_will_be_executed_first);
   }
@@ -144,8 +144,8 @@ protected:
 
   DeferredTasksExecutorTest_WithDefaultThreadsCount() : run_called(0) {}
 
-  TestTask * getCountingTask() {
-    return new TestTask([&]() {
+  shared_ptr<TestTask> getCountingTask() {
+    return make_shared<TestTask>([&]() {
       ++run_called;
     });
   }
@@ -153,7 +153,7 @@ protected:
 
 TEST_F(DeferredTasksExecutorTest_WithDefaultThreadsCount, ExecutesTaskAfterSubmit) {
   auto counting_task = getCountingTask();
-  executor.submit(counting_task);
+  executor.submit(counting_task.get());
 
   ASSERT_TRUE(counting_task->waitFor());
   ASSERT_EQ(1, run_called);
@@ -173,15 +173,18 @@ protected:
 
 TEST_F(DeferredTasksExecutorTest_WhenNoIdleThreads, DontExecuteRedundantTask) {
   auto redundant_task = getCountingTask();
-  executor.submit(redundant_task);
+  executor.submit(redundant_task.get());
 
   ASSERT_FALSE(redundant_task->waitFor(20));
   ASSERT_EQ(0, run_called);
+
+  releaseAllBusyThreads();
+  ASSERT_TRUE(redundant_task->waitFor());
 }
 
 TEST_F(DeferredTasksExecutorTest_WhenNoIdleThreads, ExecutesRedundantTaskAfterThreadBecomeIdle) {
   auto redundant_task = getCountingTask();
-  executor.submit(redundant_task);
+  executor.submit(redundant_task.get());
   releaseAllBusyThreads();
 
   ASSERT_TRUE(redundant_task->waitFor(20));
@@ -195,10 +198,10 @@ protected:
 
 TEST_F(DeferredTasksExecutorTest_WithSingleThreadAndBlockingHelper, CancelShouldReturnFalseIfTaskAlredyExecuting) {
   auto task = getBlockingTask();
-  executor.submit(task);
+  executor.submit(task.get());
 
   ASSERT_EQ(std::future_status::ready, thread_ready_future.wait_for(future_timeout));
-  ASSERT_FALSE(executor.cancel(task));
+  ASSERT_FALSE(executor.cancel(task.get()));
 
   block_thread_promise.set_value();
   task->waitFor();
@@ -221,7 +224,7 @@ TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, ExecutesAllTasksWithSa
 
   const int tasks_size = 5000;
   for (size_t i = 0; i < tasks_size; ++i)
-    executor.submit(new TestTask([&execution_order, i]() {
+    executor.submitAndAutoDelete(new TestTask([&execution_order, i]() {
       execution_order.push_back(i);
     }));
 
@@ -239,7 +242,7 @@ TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, ExecutesTasksWithHighP
   const int tasks_size = 2000;
   for (size_t i = 0; i < tasks_size; ++i) {
     int priority = getRandInt(-500, 500);
-    executor.submit(new TestTask([&priorities, priority, i]() {
+    executor.submitAndAutoDelete(new TestTask([&priorities, priority, i]() {
       priorities.push_back(priority);
     }), priority);
   }
@@ -254,17 +257,19 @@ TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, ExecutesTasksWithHighP
 
 TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, InQueueShouldReturnCorrectValue) {
   auto task = getBlockingTask();
-  ASSERT_FALSE(executor.inQueue(task));
+  ASSERT_FALSE(executor.inQueue(task.get()));
 
-  executor.submit(task);
-  ASSERT_TRUE(executor.inQueue(task));
+  executor.submit(task.get());
+  ASSERT_TRUE(executor.inQueue(task.get()));
 
   releaseAllBusyThreads();
   ASSERT_EQ(std::future_status::ready, thread_ready_future.wait_for(future_timeout));
-  ASSERT_FALSE(executor.inQueue(task));
+  ASSERT_FALSE(executor.inQueue(task.get()));
 
   block_thread_promise.set_value();
   task->waitFor();
+  //this_thread::sleep_for(1ms);
+  ASSERT_EQ(DeferredTask::DONE, task->getState());
 }
 
 TEST_F(DeferredTasksExecutorTest_WithSingleBlockedThread, CancelReturnsTrueIfQueuedTaskWasRemoved) {
@@ -291,11 +296,11 @@ TEST(ProofOfConcept, RunTaskSequentally) {
     // do stuff
     executed_order += "m";
     // after finish submit sequental task with high priority so it will be executed before any queued with mid priority
-    executor.submit(sequentalTask, HIGH);
+    executor.submitAndAutoDelete(sequentalTask, HIGH);
   });
 
-  executor.submit(mainTask, MID);
-  executor.submit(commonTask, MID);
+  executor.submitAndAutoDelete(mainTask, MID);
+  executor.submitAndAutoDelete(commonTask, MID);
 
   executor.stop();
   ASSERT_STREQ("msc", executed_order.c_str());
