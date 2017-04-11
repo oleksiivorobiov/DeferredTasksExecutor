@@ -89,9 +89,9 @@ class DeferredTasksExecutor {
   };
   std::vector<std::thread> _thread_pool;
   typedef std::deque<QueueNode> tasks_container_t;
-  tasks_container_t _tasks; // TODO: compare vs vector/list in real scenarios
+  tasks_container_t _tasks_queue; // TODO: compare vs vector/list in real scenarios
   mutable std::mutex _tasks_mutex;
-  std::condition_variable _wakeup_threads;
+  std::condition_variable _wakeup_threads_cond;
   std::atomic<bool> _stop;
   void threadRoutine();
   void enqueueTask(const QueueNode &node);

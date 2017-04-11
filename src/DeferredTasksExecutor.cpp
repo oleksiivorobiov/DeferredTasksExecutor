@@ -55,13 +55,13 @@ void DeferredTasksExecutor::threadRoutine() {
   while (true) {
     unique_lock<mutex> lock(_tasks_mutex);
 
-    _wakeup_threads.wait(lock, [&]() { return _stop || !_tasks.empty(); });
+    _wakeup_threads_cond.wait(lock, [&]() { return _stop || !_tasks_queue.empty(); });
 
-    if (_stop && _tasks.empty())
+    if (_stop && _tasks_queue.empty())
       return;
 
-    auto enqueued_task = _tasks.back();
-    _tasks.pop_back();
+    auto enqueued_task = _tasks_queue.back();
+    _tasks_queue.pop_back();
     lock.unlock();
 
     enqueued_task.task->execute();
@@ -71,11 +71,11 @@ void DeferredTasksExecutor::threadRoutine() {
 }
 
 DeferredTasksExecutor::tasks_container_t::const_iterator DeferredTasksExecutor::findTask(const DeferredTask *task) const {
-  for (auto it = _tasks.cbegin(); it != _tasks.cend(); ++it)
+  for (auto it = _tasks_queue.cbegin(); it != _tasks_queue.cend(); ++it)
     if (it->task == task)
       return it;
 
-  return _tasks.cend();
+  return _tasks_queue.cend();
 }
 
 DeferredTasksExecutor::DeferredTasksExecutor() : DeferredTasksExecutor(thread::hardware_concurrency()) {}
@@ -99,10 +99,10 @@ DeferredTasksExecutor::~DeferredTasksExecutor() {
 void DeferredTasksExecutor::enqueueTask(const QueueNode &node) {
   unique_lock<mutex> lock(_tasks_mutex);
 
-  auto it = std::lower_bound(_tasks.begin(), _tasks.end(), node.priority, [](const auto &lhs, const auto &rhs) {
+  auto it = std::lower_bound(_tasks_queue.begin(), _tasks_queue.end(), node.priority, [](const auto &lhs, const auto &rhs) {
                                return lhs.priority < rhs;
                              });
-  _tasks.insert(it, std::move(node));
+  _tasks_queue.insert(it, std::move(node));
   lock.unlock();
 }
 
@@ -110,7 +110,7 @@ void DeferredTasksExecutor::submit(DeferredTask *task, int priority) {
   QueueNode node(task, priority);
   enqueueTask(node);
 
-  _wakeup_threads.notify_one();
+  _wakeup_threads_cond.notify_one();
 }
 
 void DeferredTasksExecutor::submitAndAutoDelete(DeferredTask *task, int priority) {
@@ -118,7 +118,7 @@ void DeferredTasksExecutor::submitAndAutoDelete(DeferredTask *task, int priority
   node.auto_delete = true;
   enqueueTask(node);
 
-  _wakeup_threads.notify_one();
+  _wakeup_threads_cond.notify_one();
 }
 
 void DeferredTasksExecutor::stop() {
@@ -129,7 +129,7 @@ void DeferredTasksExecutor::stop() {
   _stop = true;
   lock.unlock();
 
-  _wakeup_threads.notify_all();
+  _wakeup_threads_cond.notify_all();
   for (auto &thread : _thread_pool)
     thread.join();
 }
@@ -137,15 +137,15 @@ void DeferredTasksExecutor::stop() {
 bool DeferredTasksExecutor::inQueue(const DeferredTask *task) const {
   std::lock_guard<mutex> lock(_tasks_mutex);
 
-  return findTask(task) != _tasks.cend();
+  return findTask(task) != _tasks_queue.cend();
 }
 
 bool DeferredTasksExecutor::cancel(const DeferredTask *task) {
   std::lock_guard<mutex> lock(_tasks_mutex);
 
   auto it = findTask(task);
-  if (it != _tasks.cend()) {
-    _tasks.erase(it);
+  if (it != _tasks_queue.cend()) {
+    _tasks_queue.erase(it);
     return true;
   }
 
